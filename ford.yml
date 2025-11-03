@@ -1,0 +1,11 @@
+project:
+  name: SEIRD
+  version: 0.1
+
+paths:
+  source: ./src
+  output: ./docs 
+
+options:
+  extensions: f90, f95, f03
+  exclude_dir: test

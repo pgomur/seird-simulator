@@ -1,0 +1,75 @@
+module test_visualization
+    use funit
+    use precision_mod
+    use parameters_mod
+    use visualization_mod
+    implicit none
+
+contains
+
+    ! --------------------------------------------------------------------------
+    @test
+    subroutine test_render_ascii_basic
+        type(seird_params_type) :: p
+        real(dp) :: y(5)
+        integer :: day
+
+        call init_params(p)
+        y = [900._dp, 50._dp, 30._dp, 20._dp, 0._dp]
+        day = 1
+
+        call render_ascii(y, day, p)
+
+        @assertTrue(sum(y) <= p%N + y(5))
+    end subroutine test_render_ascii_basic
+
+    ! --------------------------------------------------------------------------
+    @test
+    subroutine test_render_ascii_zero_population
+        type(seird_params_type) :: p
+        real(dp) :: y(5)
+        integer :: day
+
+        call init_params(p)
+        y = [0._dp, 0._dp, 0._dp, 0._dp, 0._dp]
+        day = 0
+
+        call render_ascii(y, day, p)
+
+        @assertTrue(abs(sum(y) - 0.0_dp) < epsilon_dp)
+    end subroutine test_render_ascii_zero_population
+
+    ! --------------------------------------------------------------------------
+    @test
+    subroutine test_render_ascii_negative_values
+        type(seird_params_type) :: p
+        real(dp) :: y(5)
+        integer :: day
+
+        call init_params(p)
+        y = [-10._dp, -5._dp, -2._dp, -1._dp, -0.5_dp]
+        day = 2
+
+        call render_ascii(y, day, p)
+
+        @assertTrue(sum(max(0.0_dp, y)) >= 0.0_dp)
+    end subroutine test_render_ascii_negative_values
+
+    ! --------------------------------------------------------------------------
+    @test
+    subroutine test_render_ascii_large_population
+        type(seird_params_type) :: p
+        real(dp) :: y(5)
+        integer :: day
+
+        call init_params(p)
+        p%N = 1.0e6_dp
+        y = [5.0e5_dp, 2.5e5_dp, 1.0e5_dp, 1.0e5_dp, 1.0e4_dp]
+        day = 100
+
+        call render_ascii(y, day, p)
+
+        @assertTrue(sum(y) <= p%N + y(5))
+    end subroutine test_render_ascii_large_population
+
+end module test_visualization

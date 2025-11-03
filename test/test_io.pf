@@ -1,0 +1,96 @@
+module test_io
+    use funit
+    use precision_mod
+    use io_mod
+    implicit none
+
+    real(dp), parameter :: TOL = 1.0e-12_dp
+
+contains
+
+    ! --------------------------------------------------------------------------
+    @test
+    subroutine test_save_output_creates_file()
+        real(dp), allocatable :: y(:)
+        character(len=:), allocatable :: filename
+        logical :: file_exists
+        integer :: unit
+
+        allocate(y(5))
+        y = [1._dp, 2._dp, 3._dp, 4._dp, 5._dp]
+        filename = 'tmp_test_output.dat'
+        unit = 20
+
+        call save_output(filename, y)
+
+        ! Check if file exists
+        inquire(file=filename, exist=file_exists)
+        @assertTrue(file_exists)
+
+        ! Clean up
+        if (file_exists) call execute_command_line('rm -f ' // filename)
+    end subroutine test_save_output_creates_file
+
+    ! --------------------------------------------------------------------------
+    @test
+    subroutine test_load_input_reads_correct_data()
+        real(dp), allocatable :: y_in(:), y_out(:)
+        character(len=:), allocatable :: filename
+        integer :: i, n
+
+        n = 7
+        allocate(y_in(n), y_out(n))
+        y_in = [10._dp, 20._dp, 30._dp, 40._dp, 50._dp, 60._dp, 70._dp]
+        filename = 'tmp_test_input.dat'
+
+        call save_output(filename, y_in)
+        call load_input(filename, y_out)
+
+        do i = 1, n
+            @assertEqual(y_out(i), y_in(i), tolerance=TOL)
+        end do
+
+        ! Clean up
+        call execute_command_line('rm -f ' // filename)
+    end subroutine test_load_input_reads_correct_data
+
+    ! --------------------------------------------------------------------------
+    @test
+    subroutine test_save_and_load_consistency()
+        real(dp), allocatable :: y_orig(:), y_loaded(:)
+        character(len=:), allocatable :: filename
+        integer :: i, n
+
+        n = 10
+        allocate(y_orig(n), y_loaded(n))
+        y_orig = [(i*1.5_dp, i=1,n)]
+        filename = 'tmp_test_consistency.dat'
+
+        call save_output(filename, y_orig)
+        call load_input(filename, y_loaded)
+
+        do i = 1, n
+            @assertEqual(y_loaded(i), y_orig(i), tolerance=TOL)
+        end do
+
+        ! Clean up
+        call execute_command_line('rm -f ' // filename)
+    end subroutine test_save_and_load_consistency
+
+    ! --------------------------------------------------------------------------
+    @test
+    subroutine test_load_nonexistent_file_fails()
+        real(dp), allocatable :: y(:)
+        character(len=:), allocatable :: filename
+        integer :: ios, unit
+
+        allocate(y(3))
+        filename = 'tmp_nonexistent_file.dat'
+        unit = 21
+
+        open(unit=unit, file=filename, status='old', iostat=ios)
+        @assertNotEqual(ios, 0)
+        if (ios == 0) close(unit)
+    end subroutine test_load_nonexistent_file_fails
+
+end module test_io

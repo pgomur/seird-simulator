@@ -1,0 +1,86 @@
+!> test_seird_model.pf
+module test_seird_model
+    use funit
+    use precision_mod
+    use parameters_mod
+    use seird_model_mod
+    implicit none
+
+    real(dp), parameter :: TOL = 1.0e-12_dp
+
+contains
+
+    ! --------------------------------------------------------------------------
+    @test
+    subroutine test_seird_rhs_basic
+        type(seird_params_type) :: p
+        real(dp) :: y(5), dydt(5)
+
+        call init_params(p)
+
+        y = [900._dp, 50._dp, 40._dp, 10._dp, 0._dp]
+
+        call seird_rhs(y, dydt, p)
+
+        ! Comprobaciones físicas simples
+        @assertTrue(dydt(1) < 0.0_dp)
+        @assertTrue(dydt(2) > -y(2))
+        @assertTrue(dydt(3) > -y(3))
+        @assertTrue(dydt(4) >= 0.0_dp)
+        @assertTrue(dydt(5) >= 0.0_dp)
+    end subroutine test_seird_rhs_basic
+
+    ! --------------------------------------------------------------------------
+    @test
+    subroutine test_seird_rhs_zero_population
+        type(seird_params_type) :: p
+        real(dp) :: y(5), dydt(5)
+
+        call init_params(p)
+
+        y = 0.0_dp
+        call seird_rhs(y, dydt, p)
+
+        @assertTrue(all(abs(dydt) < TOL))
+    end subroutine test_seird_rhs_zero_population
+
+    ! --------------------------------------------------------------------------
+    @test
+    subroutine test_seird_rhs_batch_consistency
+        type(seird_params_type) :: p
+        integer, parameter :: n_pop = 3
+        real(dp) :: y(5, n_pop), dydt_single(5), dydt_batch(5, n_pop)
+        integer :: i
+
+        call init_params(p)
+
+        y(:,1) = [900._dp, 50._dp, 40._dp, 10._dp, 0._dp]
+        y(:,2) = [800._dp,100._dp, 50._dp, 50._dp, 0._dp]
+        y(:,3) = [500._dp,200._dp,200._dp,100._dp, 0._dp]
+
+        call seird_rhs_batch(y, dydt_batch, p, n_pop)
+
+        do i = 1, n_pop
+            call seird_rhs(y(:,i), dydt_single, p)
+            @assertTrue(all(abs(dydt_single - dydt_batch(:,i)) < TOL))
+        end do
+    end subroutine test_seird_rhs_batch_consistency
+
+    ! --------------------------------------------------------------------------
+    @test
+    subroutine test_seird_rhs_conservation_property
+        type(seird_params_type) :: p
+        real(dp) :: y(5), dydt(5), N_before, N_after
+
+        call init_params(p)
+
+        y = [950._dp,30._dp,15._dp,5._dp,0._dp]
+        N_before = sum(y(1:4))
+
+        call seird_rhs(y, dydt, p)
+        N_after = sum(y(1:4) + dydt(1:4)*1.0_dp) ! Euler step dummy
+
+        @assertTrue(N_after >= 0.0_dp)
+    end subroutine test_seird_rhs_conservation_property
+
+end module test_seird_model

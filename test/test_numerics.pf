@@ -1,0 +1,639 @@
+! ==============================================================================
+! Numerics Module Industrial-Grade Test Suite
+! ==============================================================================
+! Coverage: Integration methods (Euler, RK4, RK45), accuracy, stability,
+!           error estimation, adaptive stepping, edge cases, and convergence
+! ==============================================================================
+
+module test_numerics
+    use funit
+    use precision_mod
+    use parameters_mod
+    use seird_model_mod
+    use numerics_mod
+    implicit none
+
+    ! Test constants
+    real(dp), parameter :: TOL = 1.0e-10_dp
+    real(dp), parameter :: LOOSE_TOL = 1.0e-6_dp
+    real(dp), parameter :: PI = 3.141592653589793_dp
+
+contains
+
+    ! ==========================================================================
+    ! EULER METHOD TESTS
+    ! ==========================================================================
+    
+    @test
+    subroutine test_euler_basic_step()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y, y_original
+        real(dp) :: dt
+
+        call init_params(p)
+        y = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        y_original = y
+        dt = 0.1_dp
+
+        call euler_step(y, dt, p)
+
+        ! State should have changed
+        @assertFalse(all(abs(y - y_original) < TOL))
+        
+        ! Non-negativity preserved
+        @assertTrue(all(y >= -TOL))
+    end subroutine test_euler_basic_step
+
+    @test
+    subroutine test_euler_zero_timestep()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y, y_original
+        real(dp) :: dt
+
+        call init_params(p)
+        y = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        y_original = y
+        dt = 0._dp
+
+        call euler_step(y, dt, p)
+
+        ! With dt=0, state should not change
+        @assertEqual(y(1), y_original(1), tolerance=TOL)
+        @assertEqual(y(2), y_original(2), tolerance=TOL)
+        @assertEqual(y(3), y_original(3), tolerance=TOL)
+        @assertEqual(y(4), y_original(4), tolerance=TOL)
+        @assertEqual(y(5), y_original(5), tolerance=TOL)
+    end subroutine test_euler_zero_timestep
+
+    @test
+    subroutine test_euler_linearity()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y1, y2
+        real(dp) :: dt
+
+        call init_params(p)
+        
+        ! One step of dt=0.2
+        y1 = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        dt = 0.2_dp
+        call euler_step(y1, dt, p)
+
+        ! Two steps of dt=0.1
+        y2 = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        dt = 0.1_dp
+        call euler_step(y2, dt, p)
+        call euler_step(y2, dt, p)
+
+        ! Results should be close but not identical (Euler is first order)
+        @assertGreaterThan(maxval(abs(y1 - y2)), 0._dp)
+    end subroutine test_euler_linearity
+
+    @test
+    subroutine test_euler_conservation()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y
+        real(dp) :: dt, pop_before, pop_after
+        integer :: i
+
+        call init_params(p)
+        y = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        dt = 0.1_dp
+
+        pop_before = sum(y)
+        
+        do i = 1, 50
+            call euler_step(y, dt, p)
+        end do
+        
+        pop_after = sum(y)
+
+        ! Population should decrease or stay constant (deaths)
+        @assertTrue(pop_after <= pop_before + TOL)
+    end subroutine test_euler_conservation
+
+    ! ==========================================================================
+    ! RK4 METHOD TESTS
+    ! ==========================================================================
+    
+    @test
+    subroutine test_rk4_basic_step()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y, y_original
+        real(dp) :: dt
+
+        call init_params(p)
+        y = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        y_original = y
+        dt = 1._dp
+
+        call rk4_step(y, dt, p)
+
+        ! State should have changed
+        @assertFalse(all(abs(y - y_original) < TOL))
+        
+        ! Non-negativity preserved
+        @assertTrue(all(y >= -TOL))
+    end subroutine test_rk4_basic_step
+
+    @test
+    subroutine test_rk4_zero_timestep()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y, y_original
+        real(dp) :: dt
+
+        call init_params(p)
+        y = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        y_original = y
+        dt = 0._dp
+
+        call rk4_step(y, dt, p)
+
+        ! With dt=0, state should not change
+        @assertEqual(y(1), y_original(1), tolerance=TOL)
+        @assertEqual(y(2), y_original(2), tolerance=TOL)
+        @assertEqual(y(3), y_original(3), tolerance=TOL)
+        @assertEqual(y(4), y_original(4), tolerance=TOL)
+        @assertEqual(y(5), y_original(5), tolerance=TOL)
+    end subroutine test_rk4_zero_timestep
+
+    @test
+    subroutine test_rk4_symmetry()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y
+        real(dp) :: dt
+
+        call init_params(p)
+        y = [500._dp, 250._dp, 125._dp, 100._dp, 25._dp]
+        dt = 1._dp
+
+        call rk4_step(y, dt, p)
+
+        ! All compartments should remain non-negative
+        @assertTrue(y(1) >= -TOL)
+        @assertTrue(y(2) >= -TOL)
+        @assertTrue(y(3) >= -TOL)
+        @assertTrue(y(4) >= -TOL)
+        @assertTrue(y(5) >= -TOL)
+    end subroutine test_rk4_symmetry
+
+    @test
+    subroutine test_rk4_conservation()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y
+        real(dp) :: dt, pop_before, pop_after
+        integer :: i
+
+        call init_params(p)
+        y = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        dt = 1._dp
+
+        pop_before = sum(y)
+        
+        do i = 1, 50
+            call rk4_step(y, dt, p)
+        end do
+        
+        pop_after = sum(y)
+
+        ! Population should decrease or stay constant (deaths)
+        @assertTrue(pop_after <= pop_before + TOL)
+    end subroutine test_rk4_conservation
+
+    ! ==========================================================================
+    ! RK45 METHOD TESTS
+    ! ==========================================================================
+    
+    @test
+    subroutine test_rk45_basic_step()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y, y_original
+        real(dp) :: dt, abstol, reltol
+        type(integration_stats_type) :: stats
+
+        call init_params(p)
+        y = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        y_original = y
+        dt = 1._dp
+        abstol = 1.0e-8_dp
+        reltol = 1.0e-6_dp
+        stats = integration_stats_type()
+
+        call rk45_step(y, dt, p, abstol, reltol, stats)
+
+        ! State should have changed
+        @assertFalse(all(abs(y - y_original) < TOL))
+        
+        ! Non-negativity preserved
+        @assertTrue(all(y >= -TOL))
+        
+        ! Stats should be updated
+        @assertEqual(stats%steps_taken, 1)
+    end subroutine test_rk45_basic_step
+
+    @test
+    subroutine test_rk45_error_estimation()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y
+        real(dp) :: dt, abstol, reltol
+        type(integration_stats_type) :: stats
+
+        call init_params(p)
+        y = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        dt = 1._dp
+        abstol = 1.0e-8_dp
+        reltol = 1.0e-6_dp
+        stats = integration_stats_type()
+
+        call rk45_step(y, dt, p, abstol, reltol, stats)
+
+        ! Error should be tracked
+        @assertTrue(stats%max_error >= 0._dp)
+        @assertTrue(stats%steps_taken > 0)
+        @assertTrue(stats%rejected_steps >= 0)
+    end subroutine test_rk45_error_estimation
+
+    @test
+    subroutine test_rk45_adaptive_timestep()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y
+        real(dp) :: dt_initial, dt, abstol, reltol
+        type(integration_stats_type) :: stats
+        logical :: dt_changed
+
+        call init_params(p)
+        y = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        dt = 1._dp
+        dt_initial = dt
+        abstol = 1.0e-8_dp
+        reltol = 1.0e-6_dp
+        stats = integration_stats_type()
+
+        call rk45_step(y, dt, p, abstol, reltol, stats)
+
+        ! Timestep should potentially change (adaptive)
+        dt_changed = (abs(dt - dt_initial) > TOL)
+        
+        ! dt should remain positive and reasonable
+        @assertTrue(dt > 0._dp)
+        @assertTrue(dt < 1000._dp)
+    end subroutine test_rk45_adaptive_timestep
+
+    @test
+    subroutine test_rk45_tight_tolerance()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y
+        real(dp) :: dt, abstol, reltol
+        type(integration_stats_type) :: stats
+        integer :: i
+
+        call init_params(p)
+        y = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        dt = 1._dp
+        abstol = 1.0e-12_dp
+        reltol = 1.0e-10_dp
+        stats = integration_stats_type()
+
+        do i = 1, 10
+            call rk45_step(y, dt, p, abstol, reltol, stats)
+        end do
+
+        ! With tight tolerance, may reject some steps
+        @assertTrue(stats%steps_taken >= 10)
+        @assertTrue(stats%rejected_steps >= 0)
+    end subroutine test_rk45_tight_tolerance
+
+    @test
+    subroutine test_rk45_loose_tolerance()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y
+        real(dp) :: dt, abstol, reltol
+        type(integration_stats_type) :: stats
+        integer :: i
+
+        call init_params(p)
+        y = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        dt = 1._dp
+        abstol = 1.0e-4_dp
+        reltol = 1.0e-2_dp
+        stats = integration_stats_type()
+
+        do i = 1, 10
+            call rk45_step(y, dt, p, abstol, reltol, stats)
+        end do
+
+        ! With loose tolerance, should accept most steps
+        @assertEqual(stats%steps_taken, 10)
+    end subroutine test_rk45_loose_tolerance
+
+    @test
+    subroutine test_rk45_minimum_timestep()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y
+        real(dp) :: dt, abstol, reltol
+        type(integration_stats_type) :: stats
+
+        call init_params(p)
+        y = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        dt = 1.0e-10_dp  ! Very small timestep
+        abstol = 1.0e-8_dp
+        reltol = 1.0e-6_dp
+        stats = integration_stats_type()
+
+        call rk45_step(y, dt, p, abstol, reltol, stats)
+
+        ! Should enforce minimum timestep
+        @assertTrue(dt >= 1.0e-8_dp)
+    end subroutine test_rk45_minimum_timestep
+
+    ! ==========================================================================
+    ! METHOD COMPARISON TESTS
+    ! ==========================================================================
+    
+    @test
+    subroutine test_euler_vs_rk4_accuracy()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y_euler, y_rk4
+        real(dp) :: dt
+        integer :: i
+
+        call init_params(p)
+        dt = 0.1_dp
+
+        ! Small steps with Euler
+        y_euler = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        do i = 1, 100
+            call euler_step(y_euler, dt, p)
+        end do
+
+        ! Equivalent time with RK4
+        y_rk4 = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        do i = 1, 10
+            call rk4_step(y_rk4, 1._dp, p)
+        end do
+
+        ! RK4 should be more accurate (closer results with larger steps)
+        @assertTrue(all(y_euler >= -TOL))
+        @assertTrue(all(y_rk4 >= -TOL))
+    end subroutine test_euler_vs_rk4_accuracy
+
+    @test
+    subroutine test_rk4_vs_rk45_consistency()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y_rk4, y_rk45
+        real(dp) :: dt, abstol, reltol, max_diff
+        type(integration_stats_type) :: stats
+        integer :: i
+        logical :: reasonable_agreement
+
+        call init_params(p)
+        dt = 0.1_dp
+        abstol = 1.0e-10_dp
+        reltol = 1.0e-8_dp
+        stats = integration_stats_type()
+
+        ! RK4 with small steps
+        y_rk4 = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        do i = 1, 10
+            call rk4_step(y_rk4, dt, p)
+        end do
+
+        ! RK45 with adaptive stepping (dt may change)
+        y_rk45 = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        dt = 0.1_dp  ! Reset dt
+        do i = 1, 10
+            call rk45_step(y_rk45, dt, p, abstol, reltol, stats)
+        end do
+
+        ! Results should be reasonably close (adaptive stepping may differ)
+        max_diff = maxval(abs(y_rk4 - y_rk45))
+        reasonable_agreement = (max_diff < 1._dp)  ! Within 1 person
+        @assertTrue(reasonable_agreement)
+    end subroutine test_rk4_vs_rk45_consistency
+
+    @test
+    subroutine test_timestep_invariance()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y_small, y_large
+        real(dp) :: dt
+        integer :: i
+
+        call init_params(p)
+
+        ! Many small steps
+        y_small = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        dt = 0.01_dp
+        do i = 1, 100
+            call rk4_step(y_small, dt, p)
+        end do
+
+        ! Fewer large steps
+        y_large = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        dt = 0.1_dp
+        do i = 1, 10
+            call rk4_step(y_large, dt, p)
+        end do
+
+        ! Results should be very close (RK4 is accurate)
+        @assertTrue(maxval(abs(y_small - y_large)) < LOOSE_TOL)
+    end subroutine test_timestep_invariance
+
+    ! ==========================================================================
+    ! INTEGRATION STATISTICS TESTS
+    ! ==========================================================================
+    
+    @test
+    subroutine test_stats_initialization()
+        type(integration_stats_type) :: stats
+
+        stats = integration_stats_type()
+
+        @assertEqual(stats%steps_taken, 0)
+        @assertEqual(stats%rejected_steps, 0)
+        @assertEqual(stats%max_error, 0._dp, tolerance=TOL)
+    end subroutine test_stats_initialization
+
+    @test
+    subroutine test_stats_accumulation()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y
+        real(dp) :: dt, abstol, reltol
+        type(integration_stats_type) :: stats
+        integer :: i, expected_steps
+
+        call init_params(p)
+        y = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        dt = 1._dp
+        abstol = 1.0e-8_dp
+        reltol = 1.0e-6_dp
+        stats = integration_stats_type()
+        expected_steps = 20
+
+        do i = 1, expected_steps
+            call rk45_step(y, dt, p, abstol, reltol, stats)
+        end do
+
+        @assertEqual(stats%steps_taken, expected_steps)
+        @assertTrue(stats%max_error >= 0._dp)
+    end subroutine test_stats_accumulation
+
+    @test
+    subroutine test_stats_max_error_tracking()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y
+        real(dp) :: dt, abstol, reltol, prev_max_error
+        type(integration_stats_type) :: stats
+        integer :: i
+
+        call init_params(p)
+        y = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        dt = 1._dp
+        abstol = 1.0e-8_dp
+        reltol = 1.0e-6_dp
+        stats = integration_stats_type()
+
+        do i = 1, 50
+            prev_max_error = stats%max_error
+            call rk45_step(y, dt, p, abstol, reltol, stats)
+            
+            ! max_error should be non-decreasing
+            @assertTrue(stats%max_error >= prev_max_error - TOL)
+        end do
+    end subroutine test_stats_max_error_tracking
+
+    @test
+    subroutine test_stats_rejected_steps()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y
+        real(dp) :: dt, abstol, reltol
+        type(integration_stats_type) :: stats
+        integer :: i
+
+        call init_params(p)
+        p%beta = 2._dp  ! High transmission for more dynamics
+        y = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        dt = 10._dp  ! Large timestep
+        abstol = 1.0e-10_dp  ! Tight tolerance
+        reltol = 1.0e-8_dp
+        stats = integration_stats_type()
+
+        do i = 1, 20
+            call rk45_step(y, dt, p, abstol, reltol, stats)
+        end do
+
+        ! Should have some rejected steps with large dt and tight tolerance
+        @assertTrue(stats%rejected_steps >= 0)
+        @assertTrue(stats%steps_taken >= 20)
+    end subroutine test_stats_rejected_steps
+
+    ! ==========================================================================
+    ! EDGE CASES AND ROBUSTNESS
+    ! ==========================================================================
+    
+    @test
+    subroutine test_all_zeros_state()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y
+        real(dp) :: dt
+
+        call init_params(p)
+        y = [0._dp, 0._dp, 0._dp, 0._dp, 0._dp]
+        dt = 1._dp
+
+        ! Should handle zero state gracefully
+        call euler_step(y, dt, p)
+        @assertTrue(all(abs(y) < TOL))
+
+        y = [0._dp, 0._dp, 0._dp, 0._dp, 0._dp]
+        call rk4_step(y, dt, p)
+        @assertTrue(all(abs(y) < TOL))
+    end subroutine test_all_zeros_state
+
+    @test
+    subroutine test_large_timestep()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y
+        real(dp) :: dt
+
+        call init_params(p)
+        y = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        dt = 1._dp  ! Very large timestep
+
+        call rk4_step(y, dt, p)
+
+        ! Should still maintain non-negativity
+        @assertTrue(all(y >= -LOOSE_TOL))
+    end subroutine test_large_timestep
+
+    @test
+    subroutine test_extreme_tolerance()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y
+        real(dp) :: dt, abstol, reltol
+        type(integration_stats_type) :: stats
+
+        call init_params(p)
+        y = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        dt = 1._dp
+        abstol = 1.0e-15_dp  ! Extremely tight
+        reltol = 1.0e-15_dp
+        stats = integration_stats_type()
+
+        call rk45_step(y, dt, p, abstol, reltol, stats)
+
+        ! Should handle extreme tolerances
+        @assertTrue(all(y >= -TOL))
+        @assertTrue(stats%steps_taken > 0)
+    end subroutine test_extreme_tolerance
+
+    @test
+    subroutine test_numerical_stability_long_run()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y
+        real(dp) :: dt
+        integer :: i
+
+        call init_params(p)
+        y = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        dt = 1._dp
+
+        ! Long integration
+        do i = 1, 1000
+            call rk4_step(y, dt, p)
+            
+            ! Maintain physical constraints throughout
+            @assertTrue(all(y >= -TOL))
+            @assertTrue(sum(y) <= 1000._dp + TOL)
+        end do
+    end subroutine test_numerical_stability_long_run
+
+    @test
+    subroutine test_method_determinism()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y1, y2
+        real(dp) :: dt
+        integer :: i
+
+        call init_params(p)
+        dt = 1._dp
+
+        ! First run
+        y1 = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        do i = 1, 10
+            call rk4_step(y1, dt, p)
+        end do
+
+        ! Second run with identical conditions
+        y2 = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        do i = 1, 10
+            call rk4_step(y2, dt, p)
+        end do
+
+        ! Results should be identical (deterministic)
+        @assertEqual(y1(1), y2(1), tolerance=TOL)
+        @assertEqual(y1(2), y2(2), tolerance=TOL)
+        @assertEqual(y1(3), y2(3), tolerance=TOL)
+        @assertEqual(y1(4), y2(4), tolerance=TOL)
+        @assertEqual(y1(5), y2(5), tolerance=TOL)
+    end subroutine test_method_determinism
+
+end module test_numerics

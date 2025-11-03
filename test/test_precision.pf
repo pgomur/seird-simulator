@@ -1,0 +1,48 @@
+module test_precision
+    use funit
+    use precision_mod
+    implicit none
+
+    real(dp), parameter :: TOL = 1.0e-14_dp
+
+contains
+
+    ! --------------------------------------------------------------------------
+    @test
+    subroutine test_dp_kind_is_double_precision()
+        real(dp) :: x
+        integer :: expected_kind
+        expected_kind = kind(1.0d0)
+        x = 1.23_dp
+        @assertEqual(kind(x), expected_kind)
+    end subroutine test_dp_kind_is_double_precision
+
+    ! --------------------------------------------------------------------------
+    @test
+    subroutine test_epsilon_dp_positive()
+        @assertTrue(epsilon_dp > 0.0_dp)
+        ! Comprobar que es del orden esperado
+        @assertTrue(epsilon_dp < 1.0e-10_dp)
+    end subroutine test_epsilon_dp_positive
+
+    ! --------------------------------------------------------------------------
+    @test
+    subroutine test_tiny_dp_positive()
+        @assertTrue(tiny_dp > 0.0_dp)
+        ! Comprobar que tiny_dp es mucho menor que epsilon_dp
+        @assertTrue(tiny_dp < epsilon_dp)
+    end subroutine test_tiny_dp_positive
+
+    ! --------------------------------------------------------------------------
+    @test
+    subroutine test_machine_arithmetic_ordering()
+        real(dp) :: a, b
+        a = 1.0_dp
+        b = a + epsilon_dp
+        ! b debe ser ligeramente mayor que a
+        @assertTrue(b > a)
+        ! Pero a + tiny_dp ≈ a
+        @assertTrue(abs(a + tiny_dp - a) < epsilon_dp)
+    end subroutine test_machine_arithmetic_ordering
+
+end module test_precision

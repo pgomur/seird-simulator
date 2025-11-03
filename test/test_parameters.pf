@@ -1,0 +1,49 @@
+module test_parameters
+    use funit
+    use precision_mod
+    use parameters_mod
+    implicit none
+
+    real(dp), parameter :: TOL = 1.0e-12_dp
+
+contains
+
+    ! --------------------------------------------------------------------------
+    @test
+    subroutine test_init_params_defaults()
+        type(seird_params_type) :: p
+
+        call init_params(p)
+
+        @assertEqual(p%beta,    0.5_dp,    tolerance=TOL)
+        @assertEqual(p%sigma,   0.2_dp,    tolerance=TOL)
+        @assertEqual(p%gamma,   0.1_dp,    tolerance=TOL)
+        @assertEqual(p%mu,      0.01_dp,   tolerance=TOL)
+
+        @assertEqual(p%N,                     1000._dp, tolerance=TOL)
+        @assertEqual(p%vaccination_rate,      0.0_dp,   tolerance=TOL)
+        @assertEqual(p%contact_rate,          1.0_dp,   tolerance=TOL)
+        @assertEqual(p%waning_immunity_rate,  0.0_dp,   tolerance=TOL)
+        @assertEqual(p%asymptomatic_fraction, 0.0_dp,   tolerance=TOL)
+        @assertEqual(p%hospitalization_rate,  0.0_dp,   tolerance=TOL)
+        @assertEqual(p%mortality_rate_severe, 0.0_dp,   tolerance=TOL)
+    end subroutine test_init_params_defaults
+
+    ! --------------------------------------------------------------------------
+    @test
+    subroutine test_modify_params()
+        type(seird_params_type) :: p
+
+        call init_params(p)
+
+        p%beta = 0.9_dp
+        p%N    = 5000._dp
+
+        @assertEqual(p%beta, 0.9_dp,  tolerance=TOL)
+        @assertEqual(p%N,    5000._dp, tolerance=TOL)
+
+        @assertEqual(p%gamma,   0.1_dp, tolerance=TOL)
+        @assertEqual(p%mu,      0.01_dp, tolerance=TOL)
+    end subroutine test_modify_params
+
+end module test_parameters

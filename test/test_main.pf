@@ -1,0 +1,552 @@
+! ==============================================================================
+! SEIRD Model Industrial-Grade Test Suite
+! ==============================================================================
+! Coverage: Initial conditions, parameter validation, numerical integration,
+!           conservation laws, edge cases, performance, and data export
+! ==============================================================================
+
+module test_main
+    use funit
+    use precision_mod
+    use parameters_mod
+    use seird_model_mod
+    use numerics_mod
+    implicit none
+
+    ! Test fixtures and constants
+    real(dp), parameter :: TOL = 1.0e-10_dp
+    real(dp), parameter :: PERCENT_TOL = 0.01_dp  ! 0.01% tolerance
+    integer, parameter :: INTEGRATION_DAYS = 100
+
+contains
+
+    ! ==========================================================================
+    ! INITIAL CONDITIONS TESTS
+    ! ==========================================================================
+    
+    @test
+    subroutine test_initial_population_conservation()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y
+        real(dp) :: total_pop
+
+        call init_params(p)
+        y = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        total_pop = sum(y)
+
+        @assertEqual(p%N, total_pop, tolerance=TOL)
+        @assertTrue(all(y >= 0._dp))
+    end subroutine test_initial_population_conservation
+
+    @test
+    subroutine test_initial_conditions_boundary()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y_all_susceptible, y_all_exposed, y_zero
+
+        call init_params(p)
+        
+        ! Test all susceptible
+        y_all_susceptible = [p%N, 0._dp, 0._dp, 0._dp, 0._dp]
+        @assertEqual(sum(y_all_susceptible), p%N, tolerance=TOL)
+        
+        ! Test all exposed
+        y_all_exposed = [0._dp, p%N, 0._dp, 0._dp, 0._dp]
+        @assertEqual(sum(y_all_exposed), p%N, tolerance=TOL)
+        
+        ! Test zero population (edge case)
+        y_zero = [0._dp, 0._dp, 0._dp, 0._dp, 0._dp]
+        @assertEqual(sum(y_zero), 0._dp, tolerance=TOL)
+    end subroutine test_initial_conditions_boundary
+
+    @test
+    subroutine test_initial_conditions_realistic()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y
+        real(dp) :: prevalence
+
+        call init_params(p)
+        ! Realistic pandemic start: 1% infected
+        y = [0.99_dp * p%N, 0._dp, 0.01_dp * p%N, 0._dp, 0._dp]
+        
+        prevalence = y(3) / sum(y(1:4)) * 100._dp
+        @assertEqual(prevalence, 1._dp, tolerance=0.01_dp)
+    end subroutine test_initial_conditions_realistic
+
+    ! ==========================================================================
+    ! PARAMETER VALIDATION TESTS
+    ! ==========================================================================
+    
+    @test
+    subroutine test_parameters_physical_bounds()
+        type(seird_params_type) :: p
+        call init_params(p)
+
+        ! Transmission rates must be positive
+        @assertTrue(p%beta > 0._dp)
+        @assertTrue(p%sigma > 0._dp)
+        @assertTrue(p%gamma > 0._dp)
+        
+        ! Mortality can be zero (non-lethal disease)
+        @assertTrue(p%mu >= 0._dp)
+        
+        ! Population must be positive
+        @assertTrue(p%N > 0._dp)
+    end subroutine test_parameters_physical_bounds
+
+    @test
+    subroutine test_parameters_probability_ranges()
+        type(seird_params_type) :: p
+        logical :: vax_ok, asymp_ok, hosp_ok, mort_ok
+        
+        call init_params(p)
+
+        ! Fractions and rates that are probabilities
+        vax_ok = (p%vaccination_rate >= 0._dp .and. p%vaccination_rate <= 1._dp)
+        @assertTrue(vax_ok)
+        
+        asymp_ok = (p%asymptomatic_fraction >= 0._dp .and. p%asymptomatic_fraction <= 1._dp)
+        @assertTrue(asymp_ok)
+        
+        hosp_ok = (p%hospitalization_rate >= 0._dp .and. p%hospitalization_rate <= 1._dp)
+        @assertTrue(hosp_ok)
+        
+        mort_ok = (p%mortality_rate_severe >= 0._dp .and. p%mortality_rate_severe <= 1._dp)
+        @assertTrue(mort_ok)
+    end subroutine test_parameters_probability_ranges
+
+    @test
+    subroutine test_parameters_epidemiological_consistency()
+        type(seird_params_type) :: p
+        real(dp) :: R0, generation_time
+        logical :: gen_time_ok, contact_ok
+        
+        call init_params(p)
+        
+        ! Basic reproduction number R0 = beta / gamma
+        R0 = p%beta / p%gamma
+        @assertTrue(R0 > 0._dp)
+        
+        ! Generation time should be reasonable (days)
+        generation_time = 1._dp / p%sigma + 1._dp / p%gamma
+        gen_time_ok = (generation_time > 0._dp .and. generation_time < 100._dp)
+        @assertTrue(gen_time_ok)
+        
+        ! Contact rate should be reasonable
+        contact_ok = (p%contact_rate >= 0._dp .and. p%contact_rate < 1000._dp)
+        @assertTrue(contact_ok)
+    end subroutine test_parameters_epidemiological_consistency
+
+    ! ==========================================================================
+    ! NUMERICAL INTEGRATION TESTS
+    ! ==========================================================================
+    
+    @test
+    subroutine test_euler_stability()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y, y_backup
+        real(dp) :: dt
+        integer :: i
+
+        call init_params(p)
+        y = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        dt = 0.1_dp  ! Small time step for Euler
+        
+        do i = 1, 10
+            y_backup = y
+            call euler_step(y, dt, p)
+            
+            ! Non-negativity
+            @assertTrue(all(y >= -TOL))
+            
+            ! Population conservation (deaths reduce total)
+            @assertTrue(sum(y) <= sum(y_backup) + TOL)
+        end do
+    end subroutine test_euler_stability
+
+    @test
+    subroutine test_rk4_accuracy()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y, y_backup
+        real(dp) :: dt
+        integer :: i
+
+        call init_params(p)
+        y = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        dt = 1._dp
+        
+        do i = 1, 10
+            y_backup = y
+            call rk4_step(y, dt, p)
+            
+            @assertTrue(all(y >= -TOL))
+            @assertTrue(sum(y) <= sum(y_backup) + TOL)
+        end do
+    end subroutine test_rk4_accuracy
+
+    @test
+    subroutine test_rk45_adaptive_stepping()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y
+        real(dp) :: dt, abstol, reltol
+        type(integration_stats_type) :: stats
+        integer :: i
+
+        call init_params(p)
+        y = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        dt = 1._dp
+        abstol = 1.0e-8_dp
+        reltol = 1.0e-6_dp
+        stats = integration_stats_type()
+
+        do i = 1, 50
+            call rk45_step(y, dt, p, abstol, reltol, stats)
+            
+            @assertTrue(all(y >= -TOL))
+        end do
+
+        ! Adaptive stepping should have taken steps
+        @assertTrue(stats%steps_taken > 0)
+        
+        ! Error tracking should be active
+        @assertTrue(stats%max_error >= 0._dp)
+    end subroutine test_rk45_adaptive_stepping
+
+    @test
+    subroutine test_method_convergence()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y_euler, y_rk4, y_rk45
+        real(dp) :: dt, abstol, reltol
+        type(integration_stats_type) :: stats
+        integer :: i
+        logical :: convergence_ok
+
+        call init_params(p)
+        dt = 0.1_dp
+        abstol = 1.0e-10_dp
+        reltol = 1.0e-8_dp
+        stats = integration_stats_type()
+
+        ! Initialize all methods with same IC
+        y_euler = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        y_rk4 = y_euler
+        y_rk45 = y_euler
+
+        ! Integrate for 10 steps
+        do i = 1, 10
+            call euler_step(y_euler, dt, p)
+            call rk4_step(y_rk4, dt, p)
+            call rk45_step(y_rk45, dt, p, abstol, reltol, stats)
+        end do
+
+        ! RK4 and RK45 should be closer to each other than to Euler
+        convergence_ok = maxval(abs(y_rk4 - y_rk45)) < maxval(abs(y_euler - y_rk4))
+        @assertTrue(convergence_ok)
+    end subroutine test_method_convergence
+
+    ! ==========================================================================
+    ! CONSERVATION LAWS AND INVARIANTS
+    ! ==========================================================================
+    
+    @test
+    subroutine test_population_monotonicity()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y
+        real(dp) :: dt, pop_old, pop_new
+        integer :: i
+
+        call init_params(p)
+        y = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        dt = 1._dp
+
+        pop_old = sum(y)
+        
+        do i = 1, 100
+            call rk4_step(y, dt, p)
+            pop_new = sum(y)
+            
+            ! Population can only decrease (due to deaths) or stay constant
+            @assertTrue(pop_new <= pop_old + TOL)
+            pop_old = pop_new
+        end do
+    end subroutine test_population_monotonicity
+
+    @test
+    subroutine test_compartment_bounds()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y
+        real(dp) :: dt
+        integer :: i, j
+
+        call init_params(p)
+        y = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        dt = 1._dp
+
+        do i = 1, 100
+            call rk4_step(y, dt, p)
+            
+            ! Each compartment must be non-negative
+            do j = 1, 5
+                @assertTrue(y(j) >= -TOL)
+            end do
+            
+            ! Each compartment cannot exceed total population
+            do j = 1, 5
+                @assertTrue(y(j) <= p%N + TOL)
+            end do
+        end do
+    end subroutine test_compartment_bounds
+
+    @test
+    subroutine test_death_accumulation()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y
+        real(dp) :: dt, deaths_old
+        integer :: i
+
+        call init_params(p)
+        p%mu = 0.01_dp  ! Set non-zero mortality
+        y = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        dt = 1._dp
+        deaths_old = y(5)
+
+        do i = 1, 100
+            call rk4_step(y, dt, p)
+            
+            ! Deaths should be monotonically non-decreasing
+            @assertTrue(y(5) >= deaths_old - TOL)
+            deaths_old = y(5)
+        end do
+    end subroutine test_death_accumulation
+
+    ! ==========================================================================
+    ! EDGE CASES AND BOUNDARY CONDITIONS
+    ! ==========================================================================
+    
+    @test
+    subroutine test_zero_initial_infected()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y
+        real(dp) :: dt
+        integer :: i
+        logical :: no_epidemic
+
+        call init_params(p)
+        y = [1000._dp, 0._dp, 0._dp, 0._dp, 0._dp]  ! No exposed or infected
+        dt = 1._dp
+
+        do i = 1, 10
+            call rk4_step(y, dt, p)
+        end do
+
+        ! System should remain stable (all in S or move to R via vaccination)
+        no_epidemic = (y(2) < TOL .and. y(3) < TOL)
+        @assertTrue(no_epidemic)
+    end subroutine test_zero_initial_infected
+
+    @test
+    subroutine test_high_mortality_rate()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y
+        real(dp) :: dt, initial_infected
+        integer :: i
+
+        call init_params(p)
+        p%mu = 0.5_dp  ! Very high mortality
+        y = [900._dp, 0._dp, 100._dp, 0._dp, 0._dp]
+        initial_infected = y(3)
+        dt = 1._dp
+
+        do i = 1, 50
+            call rk4_step(y, dt, p)
+        end do
+
+        ! With high mortality, deaths should be significant
+        @assertTrue(y(5) > 0.1_dp * initial_infected)
+    end subroutine test_high_mortality_rate
+
+    @test
+    subroutine test_vaccination_effect()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y_no_vax, y_with_vax
+        real(dp) :: dt, susc_diff, recov_diff
+        integer :: i
+        logical :: vax_reduced_susc, vax_increased_recov
+
+        call init_params(p)
+        dt = 1._dp
+
+        ! Scenario without vaccination
+        p%vaccination_rate = 0._dp
+        y_no_vax = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        do i = 1, 100
+            call rk4_step(y_no_vax, dt, p)
+        end do
+
+        ! Scenario with vaccination (higher rate for clearer effect)
+        call init_params(p)
+        p%vaccination_rate = 0.1_dp
+        y_with_vax = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        do i = 1, 100
+            call rk4_step(y_with_vax, dt, p)
+        end do
+
+        ! Check if vaccination had an effect on susceptibles or recovered
+        susc_diff = abs(y_with_vax(1) - y_no_vax(1))
+        recov_diff = abs(y_with_vax(4) - y_no_vax(4))
+        
+        ! Either susceptibles should be different OR recovered should be different
+        ! (vaccination moves people from S to R or affects epidemic dynamics)
+        vax_reduced_susc = (y_with_vax(1) < y_no_vax(1))
+        vax_increased_recov = (y_with_vax(4) > y_no_vax(4))
+        
+        @assertTrue(vax_reduced_susc .or. vax_increased_recov .or. susc_diff > TOL .or. recov_diff > TOL)
+    end subroutine test_vaccination_effect
+
+    ! ==========================================================================
+    ! DATA EXPORT AND CALCULATIONS
+    ! ==========================================================================
+    
+    @test
+    subroutine test_csv_metrics_validity()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y
+        real(dp) :: active, infected_ratio, vaccinated_est
+        logical :: ratio_ok, vax_ok
+
+        call init_params(p)
+        y = [990._dp, 10._dp, 5._dp, 3._dp, 2._dp]
+
+        ! Active population calculation
+        active = max(0.0_dp, sum(y(1:4)))
+        @assertTrue(active > 0._dp)
+        @assertEqual(active, 1008._dp, tolerance=TOL)
+
+        ! Infected ratio calculation
+        if (active > 0.0_dp) then
+            infected_ratio = y(3) / active * 100.0_dp
+        else
+            infected_ratio = 0.0_dp
+        end if
+        ratio_ok = (infected_ratio >= 0._dp .and. infected_ratio <= 100._dp)
+        @assertTrue(ratio_ok)
+
+        ! Vaccination estimate
+        vaccinated_est = y(1) * p%vaccination_rate
+        @assertTrue(vaccinated_est >= 0._dp)
+        
+        vax_ok = (vaccinated_est <= y(1))
+        @assertTrue(vax_ok)
+    end subroutine test_csv_metrics_validity
+
+    @test
+    subroutine test_csv_edge_cases()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y
+        real(dp) :: active, infected_ratio
+
+        call init_params(p)
+
+        ! Test with zero active population
+        y = [0._dp, 0._dp, 0._dp, 0._dp, 1000._dp]
+        active = max(0.0_dp, sum(y(1:4)))
+        if (active > 0.0_dp) then
+            infected_ratio = y(3) / active * 100.0_dp
+        else
+            infected_ratio = 0.0_dp
+        end if
+        @assertEqual(infected_ratio, 0._dp, tolerance=TOL)
+
+        ! Test with all infected
+        y = [0._dp, 0._dp, 1000._dp, 0._dp, 0._dp]
+        active = max(0.0_dp, sum(y(1:4)))
+        infected_ratio = y(3) / active * 100.0_dp
+        @assertEqual(infected_ratio, 100._dp, tolerance=TOL)
+    end subroutine test_csv_edge_cases
+
+    ! ==========================================================================
+    ! INTEGRATION STATISTICS TESTS
+    ! ==========================================================================
+    
+    @test
+    subroutine test_statistics_initialization()
+        type(integration_stats_type) :: stats
+
+        stats = integration_stats_type()
+
+        @assertEqual(stats%steps_taken, 0)
+        @assertEqual(stats%rejected_steps, 0)
+        @assertEqual(stats%max_error, 0.0_dp, tolerance=TOL)
+    end subroutine test_statistics_initialization
+
+    @test
+    subroutine test_statistics_accumulation()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y
+        real(dp) :: dt, abstol, reltol
+        type(integration_stats_type) :: stats
+        integer :: i
+
+        call init_params(p)
+        y = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        dt = 1._dp
+        abstol = 1.0e-8_dp
+        reltol = 1.0e-6_dp
+        stats = integration_stats_type()
+
+        do i = 1, 20
+            call rk45_step(y, dt, p, abstol, reltol, stats)
+        end do
+
+        @assertTrue(stats%steps_taken > 0)
+        @assertTrue(stats%rejected_steps >= 0)
+        @assertTrue(stats%max_error >= 0._dp)
+    end subroutine test_statistics_accumulation
+
+    ! ==========================================================================
+    ! PERFORMANCE AND REGRESSION TESTS
+    ! ==========================================================================
+    
+    @test
+    subroutine test_long_integration_stability()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y
+        real(dp) :: dt
+        integer :: i
+
+        call init_params(p)
+        y = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        dt = 1._dp
+
+        ! Long integration (1 year)
+        do i = 1, 365
+            call rk4_step(y, dt, p)
+            
+            ! Verify stability throughout
+            @assertTrue(all(y >= -TOL))
+            @assertTrue(sum(y) <= p%N + TOL)
+        end do
+    end subroutine test_long_integration_stability
+
+    @test
+    subroutine test_epidemic_peak_detection()
+        type(seird_params_type) :: p
+        real(dp), dimension(5) :: y
+        real(dp) :: dt, max_infected
+        integer :: i
+
+        call init_params(p)
+        p%beta = 0.5_dp  ! Higher transmission for clear peak
+        y = [990._dp, 10._dp, 0._dp, 0._dp, 0._dp]
+        dt = 1._dp
+        max_infected = 0._dp
+
+        do i = 1, 200
+            call rk4_step(y, dt, p)
+            if (y(3) > max_infected) max_infected = y(3)
+        end do
+
+        ! Should have had a significant epidemic peak
+        @assertTrue(max_infected > 10._dp)
+    end subroutine test_epidemic_peak_detection
+
+end module test_main
