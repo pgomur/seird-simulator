@@ -9,10 +9,11 @@
 <p>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-7D9EC0?logo=github" /></a>
   <img src="https://img.shields.io/badge/Docker-Active-29ABE2?logo=docker" />
-  <img src="https://img.shields.io/badge/Fortran-2023-F05032?logo=gnu" />
+  <img src="https://img.shields.io/badge/Fortran-2023-734F96?logo=fortran&logoColor=fff" />
   <img src="https://img.shields.io/badge/GNU_Fortran-14.2.0-E95420?logo=gnu" />
-  <img src="https://img.shields.io/badge/CMake-3.28.3-064F8C?logo=cmake" />
-  <img src="https://img.shields.io/badge/HDF5-1.14.3-4393D3?logo=hdf5" />
+  <img src="https://img.shields.io/badge/CMake-3.25.1-064F8C?logo=cmake" />
+  <img src="https://img.shields.io/badge/pFUnit-4.14-FF9900?logo=gnu" />
+  <img src="https://img.shields.io/badge/Python-3.11.2-3776AB?logo=python" />
 </p>
 
 <h2>📂 Project Structure</h2>
