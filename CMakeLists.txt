@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.12)
 project(seird_project LANGUAGES Fortran)
 
 # -------------------------------------------------------------
-# General compiler configuration
+# General compiler configuration.
 # -------------------------------------------------------------
 set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -std=f2023 -Wall -Wextra")
 
