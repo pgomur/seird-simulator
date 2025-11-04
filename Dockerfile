@@ -46,28 +46,3 @@ CMD ["bash", "-c", "mkdir -p /app/data && ford ford.yml && exec bash"]
 # docker-compose build
 # docker-compose up -d
 # ford ford.yml
-
-# make run ARGS="40 RK45 1000 20 5 0 0 0.6 0.25 0.12 0.015 1000 0.05 1.2 0.01 0.2 0.05 0.01"
-
-# | Posición | Parámetro             | Valor ejemplo |
-# | -------- | --------------------- | ------------- |
-# | 1        | DAYS                  | 40            |
-# | 2        | METHOD                | RK45          |
-# | 3        | S0                    | 1000          |
-# | 4        | E0                    | 20            |
-# | 5        | I0                    | 5             |
-# | 6        | R0                    | 0             |
-# | 7        | D0                    | 0             |
-# | 8        | BETA                  | 0.6           |
-# | 9        | SIGMA                 | 0.25          |
-# | 10       | GAMMA                 | 0.12          |
-# | 11       | MU                    | 0.015         |
-# | 12       | N (total población)   | 1000          |
-# | 13       | VACCINATION_RATE      | 0.05          |
-# | 14       | CONTACT_RATE          | 1.2           |
-# | 15       | WANING_IMMUNITY_RATE  | 0.01          |
-# | 16       | ASYMPTOMATIC_FRACTION | 0.2           |
-# | 17       | HOSPITALIZATION_RATE  | 0.05          |
-# | 18       | MORTALITY_RATE_SEVERE | 0.01          |
-
-
