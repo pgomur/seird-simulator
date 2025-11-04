@@ -13,6 +13,7 @@
   <img src="https://img.shields.io/badge/GNU_Fortran-14.2.0-E95420?logo=gnu" />
   <img src="https://img.shields.io/badge/CMake-3.25.1-064F8C?logo=cmake" />
   <img src="https://img.shields.io/badge/pFUnit-4.14-FF9900?logo=gnu" />
+  <img src="https://img.shields.io/badge/FORD-7.0.12-4584b6" />
   <img src="https://img.shields.io/badge/Python-3.11.2-3776AB?logo=python" />
 </p>
 
