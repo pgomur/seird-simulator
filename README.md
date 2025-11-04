@@ -3,7 +3,6 @@
 <p>Epidemiological modeling system based on SEIRD differential equations with extensions for vaccination, immunity waning, asymptomatic fraction, hospitalization, and differential mortality. Modular architecture supporting individual and batch simulations parallelized with OpenMP, including prevention of division by zero, clipping of negative values, and error control in adaptive integrators.</p>
 
 <p>Implements three numerical methods: explicit Euler, 4th-order Runge-Kutta (RK4), and Runge-Kutta-Fehlberg 4-5 (Dormand-Prince), adaptive and optimal for systems with variable or potentially stiff dynamics, with automatic step size adjustment and integration statistics.</p>
-
 <p>Exports results to CSV with derived metrics (effective R₀, active population) and ASCII visualization.</p>
 
 <p>
