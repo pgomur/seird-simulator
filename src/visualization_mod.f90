@@ -10,7 +10,7 @@ module visualization_mod
 contains
 
     !!----------------------------------------------------------------------
-    !! Render SEIRD model state as an ASCII table with proportional bars.
+    !! Render SEIRD model state as an ASCII table with proportional bars
     !!
     !! @param[in] y    State vector containing SEIRD components
     !!                 in the order (S, E, I, R, D)
