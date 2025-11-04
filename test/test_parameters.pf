@@ -8,7 +8,7 @@ module test_parameters
 
 contains
 
-    ! --------------------------------------------------------------------------
+    ! -------------------------------------------------------------------------
     @test
     subroutine test_init_params_defaults()
         type(seird_params_type) :: p
@@ -29,7 +29,7 @@ contains
         @assertEqual(p%mortality_rate_severe, 0.0_dp,   tolerance=TOL)
     end subroutine test_init_params_defaults
 
-    ! --------------------------------------------------------------------------
+    ! -------------------------------------------------------------------------
     @test
     subroutine test_modify_params()
         type(seird_params_type) :: p
