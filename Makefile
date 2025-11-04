@@ -1,4 +1,4 @@
-# Fortran compiler
+# Fortran compiler.
 FC = gfortran
 
 # Directories for build and source code
